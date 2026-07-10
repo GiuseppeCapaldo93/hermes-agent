@@ -11,17 +11,47 @@ def _normalized_base_url(value: Any) -> str:
     return value.strip().rstrip("/")
 
 
+def _coerce_entry(entry: Any) -> dict[str, Any] | None:
+    """Coerce a single raw fallback entry into a ``{provider, model, ...}`` dict.
+
+    Two on-disk shapes are accepted:
+
+    * ``dict`` — the canonical form written by ``hermes fallback`` and the CLI.
+    * ``"provider:model"`` string — the shape produced by the desktop
+      *Model → Fallback Models* settings field, which is rendered by the generic
+      comma-separated ``list`` editor and whose help text reads
+      *"Backup provider:model entries to try if the default model fails."*
+
+    The provider half may itself contain a colon (e.g. ``custom:my-endpoint``),
+    so the split is anchored to the **last** colon: everything before it is the
+    provider, the remainder is the model.
+
+    Returns ``None`` for shapes that can't be interpreted (e.g. a bare model
+    with no provider, or a non-string/non-dict value).
+    """
+    if isinstance(entry, dict):
+        return entry
+    if isinstance(entry, str):
+        text = entry.strip()
+        if ":" not in text:
+            return None
+        provider, _, model = text.rpartition(":")
+        return {"provider": provider.strip(), "model": model.strip()}
+    return None
+
+
 def _iter_fallback_entries(raw: Any) -> list[dict[str, Any]]:
-    if isinstance(raw, dict):
-        candidates = [raw]
+    if isinstance(raw, (dict, str)):
+        candidates: list[Any] = [raw]
     elif isinstance(raw, list):
-        candidates = raw
+        candidates = list(raw)
     else:
         return []
 
     entries: list[dict[str, Any]] = []
-    for entry in candidates:
-        if not isinstance(entry, dict):
+    for raw_entry in candidates:
+        entry = _coerce_entry(raw_entry)
+        if entry is None:
             continue
         provider = str(entry.get("provider") or "").strip()
         model = str(entry.get("model") or "").strip()
